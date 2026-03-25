@@ -1,0 +1,20 @@
+{
+  "sources": {
+    "nber": {
+      "name": "NBER Working Papers",
+      "checked_until_url": "https://www.nber.org/papers/w00000",
+      "checked_until_date": "2025-01-01",
+      "note": "NBER accessed via weekly email digest. Update manually after each check."
+    },
+    "iza": {
+      "name": "IZA Discussion Papers",
+      "checked_until_url": "https://www.iza.org/publications/dp/00000/placeholder-title",
+      "checked_until_date": "2025-01-01"
+    },
+    "crr": {
+      "name": "CRR (Boston College)",
+      "checked_until_url": "",
+      "checked_until_date": "2025-01-01"
+    }
+  }
+}
