@@ -3,12 +3,21 @@
     "nber": {
       "name": "NBER Working Papers",
       "checked_until_url": "https://www.nber.org/papers/w00000",
-      "checked_until_date": "2025-01-01",
-      "note": "NBER accessed via weekly email digest. Update manually after each check."
+      "checked_until_date": "2025-01-01"
     },
     "iza": {
       "name": "IZA Discussion Papers",
-      "checked_until_url": "https://www.iza.org/publications/dp/00000/placeholder-title",
+      "checked_until_url": "https://www.iza.org/publications/dp/00000",
+      "checked_until_date": "2025-01-01"
+    },
+    "cesifo": {
+      "name": "CESifo Working Papers",
+      "checked_until_url": "https://econpapers.repec.org/paper/cesceswps/_5f00000.htm",
+      "checked_until_date": "2025-01-01"
+    },
+    "ifs": {
+      "name": "IFS Working Papers",
+      "checked_until_url": "https://econpapers.repec.org/paper/ifsifsewp/W00_2f00.htm",
       "checked_until_date": "2025-01-01"
     },
     "crr": {

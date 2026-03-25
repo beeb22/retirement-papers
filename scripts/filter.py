@@ -148,30 +148,66 @@ def keyword_decision(title: str, abstract: str) -> str:
     return "no"
 
 
+def _econpapers_abstract_url(paper_url: str) -> str | None:
+    """Convert a canonical paper URL to its EconPapers detail page URL."""
+    # NBER: https://www.nber.org/papers/w34966 -> econpapers.repec.org/paper/nbrnberwo/34966.htm
+    m = re.search(r"nber\.org/papers/w(\d+)", paper_url)
+    if m:
+        return f"https://econpapers.repec.org/paper/nbrnberwo/{m.group(1)}.htm"
+
+    # IZA: https://www.iza.org/publications/dp/18460 -> econpapers.repec.org/paper/izaizadps/dp18460.htm
+    m = re.search(r"iza\.org/publications/dp/(\d+)", paper_url)
+    if m:
+        return f"https://econpapers.repec.org/paper/izaizadps/dp{m.group(1)}.htm"
+
+    # CESifo: already an EconPapers URL
+    if "cesceswps" in paper_url:
+        return paper_url
+
+    # IFS: EconPapers has no abstracts for IFS papers — skip
+    # (IFS website uses Drupal with no clean abstract selector)
+    if "ifsifsewp" in paper_url:
+        return None
+
+    # CRR: fetched directly by the scraper, shouldn't need this path
+    return None
+
+
 def _fetch_missing_abstracts(papers: list[dict]) -> None:
-    """Fetch abstracts in-place for papers with empty abstract fields."""
+    """Fetch abstracts from EconPapers detail pages for papers missing them."""
     if requests is None or BeautifulSoup is None:
         print("  requests/beautifulsoup4 not installed — skipping abstract fetch.")
         return
 
-    SELECTORS = {
-        "nber.org": ".page-header__intro-inner",
-    }
     HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
     for p in papers:
         url = p.get("url", "")
-        selector = next((sel for domain, sel in SELECTORS.items() if domain in url), None)
-        if not selector:
+        ep_url = _econpapers_abstract_url(url)
+        if not ep_url:
             continue
         try:
-            r = requests.get(url, headers=HEADERS, timeout=15)
+            r = requests.get(ep_url, headers=HEADERS, timeout=15)
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
-            el = soup.select_one(selector)
-            if el:
-                p["abstract"] = el.get_text(strip=True)
-                print(f"  Fetched abstract for: {p['title'][:60]}...")
+            # EconPapers: abstract follows a <b>Abstract:</b> tag in the bodytext div
+            bodytext = soup.find("div", class_="bodytext")
+            if bodytext:
+                abstract_text = bodytext.get_text()
+                idx = abstract_text.find("Abstract:")
+                if idx >= 0:
+                    # Extract text after "Abstract:" until the next section
+                    remainder = abstract_text[idx + len("Abstract:"):].strip()
+                    # Clean up — take until "Keywords:" or "JEL:" or "Date:" or end
+                    for stop in ["Keywords:", "JEL:", "Date:", "Pages:", "References:",
+                                 "Download info", "Related research"]:
+                        stop_idx = remainder.find(stop)
+                        if stop_idx > 0:
+                            remainder = remainder[:stop_idx]
+                    abstract = remainder.strip()
+                    if len(abstract) > 50:
+                        p["abstract"] = abstract
+                        print(f"  Fetched abstract for: {p['title'][:60]}...")
         except Exception as e:
             print(f"  Warning: could not fetch abstract for '{p['title'][:50]}': {e}")
         time.sleep(0.3)

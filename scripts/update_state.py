@@ -5,10 +5,13 @@ update_state.py — Updates state.json with new checked_until URLs after a succe
 import json
 from datetime import date
 
-source_map = {
-    "IZA": "iza",
-    "CRR": "crr",
+# Display name -> state.json key
+SOURCE_MAP = {
     "NBER": "nber",
+    "IZA": "iza",
+    "CESifo": "cesifo",
+    "IFS": "ifs",
+    "CRR": "crr",
 }
 
 
@@ -29,17 +32,14 @@ def main():
             first_by_source[src] = p["url"]
 
     updated = []
-    for display_name, key in source_map.items():
+    for display_name, key in SOURCE_MAP.items():
+        if key not in state["sources"]:
+            continue
         if display_name in first_by_source:
-            if key == "crr":
-                # CRR uses date-based filtering — update the date, not the URL
-                state["sources"][key]["checked_until_date"] = today
-                updated.append(f"  {display_name}: date -> {today}")
-            else:
-                new_url = first_by_source[display_name]
-                state["sources"][key]["checked_until_url"] = new_url
-                state["sources"][key]["checked_until_date"] = today
-                updated.append(f"  {display_name}: {new_url[:70]}...")
+            new_url = first_by_source[display_name]
+            state["sources"][key]["checked_until_url"] = new_url
+            state["sources"][key]["checked_until_date"] = today
+            updated.append(f"  {display_name}: {new_url[:70]}...")
 
     with open("state.json", "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2, ensure_ascii=False)
