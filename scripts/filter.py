@@ -23,7 +23,7 @@ except ImportError:
 
 # Strong positive signals — very likely relevant
 STRONG_KEYWORDS = [
-    r"\bretirement\b", r"\bretire[sd]?\b", r"\bpension\b", r"\bannuit[yi]",
+    r"\bretirement\b", r"\bretire(?:e?s?|d)\b", r"\bpension\b", r"\bannuit[yi]",
     r"\bsocial security\b", r"\bstate pension\b", r"\bold.age\b",
     r"\bolder work", r"\bolder adult", r"\baging work", r"\bageing work",
     r"\bearly exit\b", r"\bearly retirement\b",
