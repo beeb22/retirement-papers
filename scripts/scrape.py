@@ -1,29 +1,26 @@
 """
-scrape.py — Fetches new papers from EconPapers (NBER, IZA, CESifo, IFS) and CRR.
-Outputs: papers_raw.json, scrape_summary.json
+scrape.py — Fetches working papers published on or after a given date.
 
-EconPapers sources use a unified scraper. CRR is scraped directly (not on RePEc).
-Abstracts are NOT fetched here — only titles and authors from listing pages.
-Abstracts are fetched lazily in filter.py for papers that pass the keyword filter.
+Sources and the date each is filtered on:
+- NBER: release date. Listing from NBER's own API (EconPapers lags NBER by
+  days); release day and full abstract from each paper's nber.org page.
+- IZA, CESifo, IFS: the day the paper was added to EconPapers (the hidden
+  EPDATE field on each paper page). The visible "Date:" field is only a month
+  or year. Note IZA uploads to EconPapers in monthly bulk.
+- CRR: publication date shown on crr.bc.edu.
+
+Every paper comes back with its abstract, so filtering can use it.
 """
 
-import json
-import os
-import re
-import sys
-import time
 import logging
-from dataclasses import dataclass, asdict
-from datetime import date
+import time
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
+
 import requests
 from bs4 import BeautifulSoup
 
-# Ensure UTF-8 output on Windows
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-logging.basicConfig(filename="scrape_errors.log", filemode="w", level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 HEADERS = {
@@ -34,6 +31,12 @@ HEADERS = {
     )
 }
 TIMEOUT = 15
+DELAY = 0.3  # seconds between requests, to be polite to the servers
+
+# Listings are ordered by paper number, which tracks the date closely but not
+# exactly (mis-numbered IFS entries, IZA bulk uploads), so stop only after this
+# many consecutive papers older than the cutoff.
+STOP_AFTER_OLD = 10
 
 
 @dataclass
@@ -49,222 +52,185 @@ def get_soup(url: str) -> Optional[BeautifulSoup]:
     try:
         r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
         r.raise_for_status()
-        return BeautifulSoup(r.text, "html.parser")
+        # Pass raw bytes so BeautifulSoup reads the page's own charset declaration
+        # (requests guesses ISO-8859-1 for EconPapers, which garbles accented names)
+        return BeautifulSoup(r.content, "html.parser")
     except Exception as e:
         logger.warning(f"Failed to fetch {url}: {e}")
         return None
+    finally:
+        time.sleep(DELAY)
+
+
+def fix_mojibake(text: str) -> str:
+    """Repair UTF-8 text that was mis-decoded as Latin-1 upstream (IZA's
+    EconPapers records contain e.g. 'MÃ¤kinen' for 'Mäkinen', sometimes
+    several layers deep)."""
+    for _ in range(3):
+        if not any(marker in text for marker in ("Ã", "Â", "â€")):
+            break
+        try:
+            text = text.encode("cp1252").decode("utf-8")
+        except UnicodeError:
+            try:
+                text = text.encode("latin-1").decode("utf-8")
+            except UnicodeError:
+                break
+    return text
 
 
 # ---------------------------------------------------------------------------
-# EconPapers unified scraper
+# EconPapers (IZA, CESifo, IFS)
 # ---------------------------------------------------------------------------
 
-# Each EconPapers source is defined by its RePEc handle path and how paper
-# numbers are extracted from the listing.  The listing page uses <dl>/<dt>/<dd>
-# structure:
-#   <dt>NUMBER: <a href="SLUG.htm">TITLE</a> ...</dt>
-#   <dd><i>Author1</i>, <i>Author2</i> and <i>Author3</i></dd>
-
+# The listing page is newest-first, 100 papers per page, as <dl>/<dt>/<dd>:
+#   <dt>NUMBER: <a href="SLUG.htm">TITLE</a></dt>
+#   <dd><i>Author1</i>, <i>Author2</i></dd>
+# "url" is the link shown in the post; it can use {number} or {slug}.
 ECONPAPERS_SOURCES = {
-    "nber": {
-        "name": "NBER Working Papers",
-        "display": "NBER",
-        "path": "nbrnberwo",
-        "base_url": "https://econpapers.repec.org/paper/nbrnberwo/",
-        # Canonical URL template: paper number -> full URL users will see
-        "canonical_url": "https://www.nber.org/papers/w{number}",
-        # Regex to extract numeric ID from the <dt> text
-        "id_pattern": r"^(\d+):",
-        "id_type": "int",  # IDs are pure integers, comparable numerically
-    },
     "iza": {
-        "name": "IZA Discussion Papers",
         "display": "IZA",
-        "path": "izaizadps",
         "base_url": "https://econpapers.repec.org/paper/izaizadps/",
-        "canonical_url": "https://www.iza.org/publications/dp/{number}",
-        "id_pattern": r"^(\d+):",
-        "id_type": "int",
+        "url": "https://www.iza.org/publications/dp/{number}",
     },
     "cesifo": {
-        "name": "CESifo Working Papers",
         "display": "CESifo",
-        "path": "cesceswps",
         "base_url": "https://econpapers.repec.org/paper/cesceswps/",
-        "canonical_url": "https://econpapers.repec.org/paper/cesceswps/_5f{number}.htm",
-        "id_pattern": r"^(\d+):",
-        "id_type": "int",
+        "url": "https://econpapers.repec.org/paper/cesceswps/{slug}.htm",
     },
     "ifs": {
-        "name": "IFS Working Papers",
-        "display": "IFS",
-        "path": "ifsifsewp",
+        "display": "IFS",  # EconPapers has no abstracts for IFS papers
         "base_url": "https://econpapers.repec.org/paper/ifsifsewp/",
-        "canonical_url": "https://econpapers.repec.org/paper/ifsifsewp/{slug}.htm",
-        # IFS uses "W25/33" or "WCWP28/24" style IDs
-        "id_pattern": r"^([\w/]+):",
-        "id_type": "str",  # Non-numeric; use string comparison
+        "url": "https://econpapers.repec.org/paper/ifsifsewp/{slug}.htm",
     },
 }
 
 
-def _extract_id(dt_text: str, id_pattern: str) -> Optional[str]:
-    """Extract the paper ID from the text of a <dt> element."""
-    m = re.match(id_pattern, dt_text.strip())
-    return m.group(1) if m else None
+def fetch_econpapers_detail(detail_url: str) -> tuple[str, Optional[str]]:
+    """Fetch an EconPapers paper page and return (abstract, epdate)."""
+    soup = get_soup(detail_url)
+    if not soup:
+        return "", None
+
+    meta = soup.find("meta", attrs={"name": "EPDATE"})
+    epdate = meta.get("content") if meta else None
+
+    abstract = ""
+    # Abstract follows a <b>Abstract:</b> tag in the bodytext div
+    bodytext = soup.find("div", class_="bodytext")
+    text = bodytext.get_text() if bodytext else ""
+    idx = text.find("Abstract:")
+    if idx >= 0:
+        remainder = text[idx + len("Abstract:"):]
+        for stop in ["Keywords:", "JEL:", "Date:", "Pages:", "References:",
+                     "Download info", "Related research"]:
+            stop_idx = remainder.find(stop)
+            if stop_idx > 0:
+                remainder = remainder[:stop_idx]
+        if len(remainder.strip()) > 50:
+            abstract = fix_mojibake(remainder.strip())
+    return abstract, epdate
 
 
-def _parse_ifs_id(paper_id: str) -> Optional[tuple[int, int]]:
-    """Parse an IFS-style ID like 'W25/30' (or URL-derived '25/30') into a
-    (year, seq) tuple for comparison. Returns None for IDs outside the main
-    W-series (e.g. cemmap 'WCWP28/24') or with an impossible year (EconPapers
-    has mis-numbered entries like 'W46/46'), since these can't be ordered."""
-    m = re.fullmatch(r'W?(\d{2})/(\d+)', paper_id)
-    if not m:
-        return None
-    year = int(m.group(1))
-    if year > date.today().year % 100:
-        return None
-    return (year, int(m.group(2)))
-
-
-def _id_is_past_checkpoint(paper_id: str, checkpoint_id: str, id_type: str) -> bool:
-    """Return True if paper_id is AT or BEFORE the checkpoint (i.e. already seen)."""
-    if not checkpoint_id:
-        return False
-    if id_type == "int":
-        try:
-            return int(paper_id) <= int(checkpoint_id)
-        except ValueError:
-            return False
-    # String IDs (IFS): parse year/seq for numeric comparison
-    paper_parts = _parse_ifs_id(paper_id)
-    checkpoint_parts = _parse_ifs_id(checkpoint_id)
-    if paper_parts and checkpoint_parts:
-        return paper_parts <= checkpoint_parts
-    # Fallback: exact match
-    return paper_id == checkpoint_id
-
-
-def _extract_checkpoint_id(checkpoint_url: str, source_key: str) -> str:
-    """Extract the paper ID from a checkpoint URL for a given source."""
+def scrape_econpapers(source_key: str, since: str) -> list[Paper]:
     cfg = ECONPAPERS_SOURCES[source_key]
-    if cfg["id_type"] == "int":
-        # Look for trailing number in the URL
-        m = re.search(r"(\d+)(?:\.\w+)?$", checkpoint_url.rstrip("/"))
-        if m:
-            return m.group(1)
-        # NBER: /papers/wNNNNN
-        m = re.search(r"/w(\d+)", checkpoint_url)
-        if m:
-            return m.group(1)
-        # IZA: /dp/NNNNN/
-        m = re.search(r"/dp/(\d+)", checkpoint_url)
-        if m:
-            return m.group(1)
-    elif cfg["id_type"] == "str":
-        # IFS-style: URL slug like "W25_2f30.htm" → paper ID "W25/30"
-        # Extract the slug from the URL, decode _2f → /, strip .htm
-        m = re.search(r'/([^/]+?)\.htm$', checkpoint_url)
-        if m:
-            return m.group(1).replace("_2f", "/")
-    return ""
-
-
-def scrape_econpapers(source_key: str, checkpoint_url: str = "",
-                      since_id: str = "") -> list[Paper]:
-    """
-    Scrape papers from an EconPapers listing page.
-
-    checkpoint_url: stop when the paper at this URL/ID is reached.
-    since_id: alternative checkpoint as a raw paper ID string.
-    """
-    cfg = ECONPAPERS_SOURCES[source_key]
-    base_url = cfg["base_url"]
-    id_pattern = cfg["id_pattern"]
-    id_type = cfg["id_type"]
-
-    # Determine the checkpoint ID to stop at
-    checkpoint_id = since_id or _extract_checkpoint_id(checkpoint_url, source_key)
-
     papers = []
-    page = 0
-    max_pages = 20  # 100 papers/page * 20 = 2000 papers max
+    consecutive_old = 0
 
-    while page < max_pages:
-        url = base_url if page == 0 else f"{base_url}default{page * 100}.htm"
+    for page in range(20):
+        url = cfg["base_url"] if page == 0 else f"{cfg['base_url']}default{page * 100}.htm"
         soup = get_soup(url)
-        if not soup:
-            break
-
-        dl = soup.find("dl")
+        dl = soup.find("dl") if soup else None
         if not dl:
-            logger.warning(f"{source_key}: no <dl> found on page {page}")
+            if page == 0:
+                raise RuntimeError(f"could not read listing page {url}")
             break
 
-        dts = dl.find_all("dt")
-        dds = dl.find_all("dd")
-        if not dts:
-            break
-
-        found_checkpoint = False
-        for dt, dd in zip(dts, dds):
-            dt_text = dt.get_text(strip=True)
-            paper_id = _extract_id(dt_text, id_pattern)
-            if not paper_id:
-                continue
-
-            # String IDs (IFS) aren't reliably ordered on the listing: stray
-            # out-of-sequence IDs sit at the top. Skip those, and skip (rather
-            # than stop at) already-seen papers so the rest of the page is
-            # still checked.
-            if id_type == "str" and checkpoint_id and _parse_ifs_id(paper_id) is None:
-                logger.warning(f"{source_key}: skipped out-of-sequence ID "
-                               f"{paper_id} ({dt_text[:80]}) - check manually")
-                continue
-
-            # Check if we've reached the checkpoint
-            if _id_is_past_checkpoint(paper_id, checkpoint_id, id_type):
-                found_checkpoint = True
-                if id_type == "str":
-                    continue
-                break
-
-            # Extract title and link
+        for dt, dd in zip(dl.find_all("dt"), dl.find_all("dd")):
             link = dt.find("a")
             if not link:
                 continue
-            title = link.get_text(strip=True)
+            number = dt.get_text(strip=True).split(":", 1)[0]
+            slug = link.get("href", "").removesuffix(".htm")
 
-            # Build canonical URL
-            if "{slug}" in cfg["canonical_url"]:
-                slug = link.get("href", "").replace(".htm", "")
-                paper_url = cfg["canonical_url"].format(slug=slug)
-            else:
-                paper_url = cfg["canonical_url"].format(number=paper_id)
+            abstract, epdate = fetch_econpapers_detail(cfg["base_url"] + link.get("href", ""))
+            if not epdate or epdate < since:
+                consecutive_old += 1
+                if consecutive_old >= STOP_AFTER_OLD:
+                    return papers
+                continue
+            consecutive_old = 0
 
-            # Extract authors from <dd> — names are in <i> tags
-            author_tags = dd.find_all("i") if dd else []
-            authors = ", ".join(tag.get_text(strip=True) for tag in author_tags)
-
-            papers.append(Paper(cfg["display"], title, paper_url, authors, ""))
-
-        if found_checkpoint:
-            break
-        page += 1
-        time.sleep(0.5)
-
+            authors = ", ".join(i.get_text(strip=True) for i in dd.find_all("i"))
+            papers.append(Paper(cfg["display"], fix_mojibake(link.get_text(strip=True)),
+                                cfg["url"].format(number=number, slug=slug),
+                                fix_mojibake(authors), abstract))
     return papers
 
 
 # ---------------------------------------------------------------------------
-# CRR (Boston College Center for Retirement Research) — direct scraper
+# NBER
 # ---------------------------------------------------------------------------
 
-def _parse_crr_date(item) -> Optional[str]:
-    """Extract ISO date string (YYYY-MM-DD) from a CRR article card, or None."""
-    from datetime import datetime
-    date_el = item.select_one(".date, div.date")
+NBER_API = ("https://www.nber.org/api/v1/working_page_listing/"
+            "contentType/working_paper/_/_/search")
+
+
+def _html_to_text(html: Optional[str]) -> str:
+    return BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
+
+
+def fetch_nber_detail(url: str) -> tuple[str, str]:
+    """Fetch an NBER paper page and return (abstract, release date YYYY-MM-DD).
+    The API only gives a month and cuts abstracts off at 300 characters."""
+    soup = get_soup(url)
+    meta = soup.find("meta", attrs={"name": "citation_publication_date"}) if soup else None
+    if not meta:
+        raise RuntimeError(f"no release date found on {url}")
+    intro = soup.select_one("div.page-header__intro-inner")
+    return (intro.get_text(" ", strip=True) if intro else ""), meta["content"].replace("/", "-")
+
+
+def scrape_nber(since: str) -> list[Paper]:
+    # The API lists papers newest release first, 100 per page
+    papers = []
+    consecutive_old = 0
+    for page in range(1, 11):
+        r = requests.get(NBER_API, params={"page": page, "perPage": 100},
+                         headers=HEADERS, timeout=TIMEOUT)
+        r.raise_for_status()
+        rows = r.json().get("results", [])
+        if not rows:
+            break
+
+        for row in rows:
+            if "/papers/w" not in row.get("url", ""):
+                continue
+            url = "https://www.nber.org" + row["url"]
+            abstract, released = fetch_nber_detail(url)
+            if released < since:
+                consecutive_old += 1
+                if consecutive_old >= STOP_AFTER_OLD:
+                    return papers
+                continue
+            consecutive_old = 0
+
+            papers.append(Paper("NBER", _html_to_text(row.get("title")), url,
+                                ", ".join(_html_to_text(a) for a in row.get("authors") or []),
+                                abstract or _html_to_text(row.get("abstract"))))
+    return papers
+
+
+# ---------------------------------------------------------------------------
+# CRR (Boston College Center for Retirement Research)
+# ---------------------------------------------------------------------------
+
+CRR_LISTING = "https://crr.bc.edu/publication-type/working-paper/"
+
+
+def _parse_crr_date(element) -> Optional[str]:
+    """Extract an ISO date (YYYY-MM-DD) from a CRR article card, or None."""
+    date_el = element.select_one(".date, div.date")
     if not date_el:
         return None
     text = date_el.get_text(strip=True)
@@ -274,36 +240,6 @@ def _parse_crr_date(item) -> Optional[str]:
         except ValueError:
             pass
     return None
-
-
-def _scrape_crr_featured(soup, checkpoint_date: str) -> list[Paper]:
-    """Extract featured/highlighted papers from the top of the CRR listing page."""
-    featured = []
-    seen_urls: set[str] = set()
-
-    for container_sel in ["div.content-lead-content", "div.frame-1"]:
-        container = soup.select_one(container_sel)
-        if not container:
-            continue
-        link = container.select_one("h1 a")
-        if not link:
-            continue
-        paper_url = link.get("href", "")
-        if not paper_url or paper_url in seen_urls:
-            continue
-        seen_urls.add(paper_url)
-
-        pub_date = _parse_crr_date(container)
-        if checkpoint_date and pub_date and pub_date <= checkpoint_date:
-            continue
-
-        title = link.get_text(strip=True)
-        author_links = container.select("a.author")
-        authors = ", ".join(a.get_text(strip=True) for a in author_links) if author_links else ""
-
-        featured.append(Paper("CRR", title, paper_url, authors, ""))
-
-    return featured
 
 
 def _fetch_abstract_crr(url: str) -> str:
@@ -318,193 +254,84 @@ def _fetch_abstract_crr(url: str) -> str:
     return ""
 
 
-def scrape_crr(checkpoint_url: str, checkpoint_date: str = "") -> list[Paper]:
-    """Scrape CRR working papers newer than the checkpoint."""
+def _crr_cards(soup, first_page: bool):
+    """Yield (link, card) for each paper on a listing page. The first page
+    also has featured papers at the top, outside the normal cards."""
+    if first_page:
+        for sel in ["div.content-lead-content", "div.frame-1"]:
+            card = soup.select_one(sel)
+            link = card.select_one("h1 a") if card else None
+            if link:
+                yield link, card
+    for card in soup.select("div.article-card"):
+        link = (card.select_one("h2 a, h3 a, h4 a, .article-card-title a")
+                or card.select_one("a.crr-image-link, a"))
+        if link:
+            yield link, card
+
+
+def scrape_crr(since: str) -> list[Paper]:
     papers = []
-    page = 1
-    max_pages = 10
-    consecutive_old = 0
     seen_urls: set[str] = set()
+    consecutive_old = 0
 
-    while page <= max_pages:
-        url = (
-            f"https://crr.bc.edu/publication-type/working-paper/page/{page}/"
-            if page > 1
-            else "https://crr.bc.edu/publication-type/working-paper/"
-        )
-        soup = get_soup(url)
-        if not soup:
+    for page in range(1, 11):
+        soup = get_soup(CRR_LISTING if page == 1 else f"{CRR_LISTING}page/{page}/")
+        if not soup or not soup.select("div.article-card"):
+            if page == 1:
+                raise RuntimeError("could not read the CRR listing page")
             break
 
-        if page == 1:
-            for p in _scrape_crr_featured(soup, checkpoint_date):
-                if p.url not in seen_urls:
-                    seen_urls.add(p.url)
-                    # Fetch abstract for CRR (small volume, always worth it)
-                    p.abstract = _fetch_abstract_crr(p.url)
-                    papers.append(p)
-
-        items = soup.select("div.article-card")
-        if not items:
-            logger.warning(f"CRR: no items found on page {page}")
-            break
-
-        found_checkpoint = False
-        for item in items:
-            link = item.select_one("h2 a, h3 a, h4 a, .article-card-title a")
-            if not link:
-                link = item.select_one("a.crr-image-link, a")
-            if not link:
+        for link, card in _crr_cards(soup, first_page=page == 1):
+            url = link.get("href", "")
+            if not url or url in seen_urls:
                 continue
-            paper_url = link.get("href", "")
-            if not paper_url or paper_url in seen_urls:
+            seen_urls.add(url)
+
+            pub_date = _parse_crr_date(card)
+            if pub_date and pub_date < since:
+                consecutive_old += 1
+                if consecutive_old >= STOP_AFTER_OLD:
+                    return papers
                 continue
+            consecutive_old = 0
 
-            if not checkpoint_date and checkpoint_url:
-                norm = lambda u: u.rstrip("/").split("?")[0].split("#")[0]
-                if norm(paper_url) == norm(checkpoint_url):
-                    found_checkpoint = True
-                    break
-
-            if checkpoint_date:
-                pub_date = _parse_crr_date(item)
-                if pub_date and pub_date <= checkpoint_date:
-                    consecutive_old += 1
-                    if consecutive_old >= 5:
-                        found_checkpoint = True
-                    continue
-                consecutive_old = 0
-
-            title_el = item.select_one("h2, h3, h4, .article-card-title")
-            title = title_el.get_text(strip=True) if title_el else link.get_text(strip=True)
-
-            author_links = item.select("p#publication-byline a.author")
-            if author_links:
-                authors = ", ".join(a.get_text(strip=True) for a in author_links)
-            else:
-                authors_el = item.select_one(".author, .byline")
-                authors = authors_el.get_text(strip=True) if authors_el else ""
-
-            abstract = _fetch_abstract_crr(paper_url)
-
-            seen_urls.add(paper_url)
-            papers.append(Paper("CRR", title, paper_url, authors, abstract))
-
-        if found_checkpoint:
-            break
-        page += 1
-        time.sleep(0.5)
-
+            title_el = card.select_one("h1, h2, h3, h4, .article-card-title")
+            authors = card.select("p#publication-byline a.author, a.author")
+            papers.append(Paper(
+                "CRR",
+                (title_el or link).get_text(strip=True),
+                url,
+                ", ".join(dict.fromkeys(a.get_text(strip=True) for a in authors)),
+                _fetch_abstract_crr(url),
+            ))
     return papers
 
 
 # ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
-# All sources and their scraper callables
-# EconPapers sources are wrapped in lambdas to pass source_key
-SCRAPERS = {
-    "nber": lambda cp, **kw: scrape_econpapers("nber", cp, **kw),
-    "iza": lambda cp, **kw: scrape_econpapers("iza", cp, **kw),
-    "cesifo": lambda cp, **kw: scrape_econpapers("cesifo", cp, **kw),
-    "ifs": lambda cp, **kw: scrape_econpapers("ifs", cp, **kw),
-    "crr": lambda cp, **kw: scrape_crr(cp, **kw),
+# Source key -> (display name, scraper). Order is the order shown in the post.
+SOURCES = {
+    "nber": ("NBER", scrape_nber),
+    "iza": ("IZA", lambda since: scrape_econpapers("iza", since)),
+    "cesifo": ("CESifo", lambda since: scrape_econpapers("cesifo", since)),
+    "ifs": ("IFS", lambda since: scrape_econpapers("ifs", since)),
+    "crr": ("CRR", scrape_crr),
 }
 
 
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Scrape new working papers.")
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--since",
-        metavar="ID_OR_DATE",
-        help=(
-            "Check all papers after this checkpoint. "
-            "For EconPapers sources: a paper number (e.g. 34900 for NBER). "
-            "For CRR: a YYYY-MM-DD date. "
-            "Overrides state.json for this run."
-        ),
-    )
-    group.add_argument(
-        "--checkpoints",
-        metavar="JSON",
-        help=(
-            'Per-source checkpoint overrides as JSON, e.g. '
-            '\'{"nber": "34900", "iza": "18400", "crr": "2026-01-01"}\'. '
-            "Values are paper numbers for EconPapers sources or dates for CRR."
-        ),
-    )
-    args = parser.parse_args()
-
-    with open("state.json", encoding="utf-8") as f:
-        state = json.load(f)
-
-    # Build effective checkpoint overrides
-    checkpoint_overrides: dict[str, dict] = {}
-    if args.since:
-        print(f"Mode: --since {args.since} (overriding all checkpoints for this run)")
-        for key in SCRAPERS:
-            if key == "crr":
-                # For CRR, --since is always a date
-                checkpoint_overrides[key] = {"url": "", "date": args.since}
-            else:
-                # For EconPapers sources, --since is a paper number/ID
-                checkpoint_overrides[key] = {"url": "", "since_id": args.since}
-    elif args.checkpoints:
-        raw = json.loads(args.checkpoints)
-        for key, value in raw.items():
-            key = key.lower()
-            if key == "crr":
-                checkpoint_overrides[key] = {"url": "", "date": value}
-            else:
-                checkpoint_overrides[key] = {"url": "", "since_id": value}
-        print(f"Mode: --checkpoints override for: {', '.join(checkpoint_overrides)}")
-
-    all_papers = []
-    scrape_status: dict[str, str] = {}
-
-    for source_key, scraper_fn in SCRAPERS.items():
-        source_state = state["sources"].get(source_key, {})
-        name = source_state.get("name", source_key)
-
-        if source_key in checkpoint_overrides:
-            override = checkpoint_overrides[source_key]
-            kwargs = {}
-            if source_key == "crr":
-                cp = override.get("url", "")
-                kwargs["checkpoint_date"] = override.get("date", "")
-            else:
-                cp = override.get("url", "")
-                kwargs["since_id"] = override.get("since_id", "")
-        else:
-            cp = source_state.get("checked_until_url", "")
-            kwargs = {}
-            if source_key == "crr":
-                kwargs["checkpoint_date"] = source_state.get("checked_until_date", "")
-
-        print(f"Scraping {name}...")
+def scrape_all(since: str) -> tuple[list[Paper], list[str]]:
+    """Scrape every source for papers on or after `since` (YYYY-MM-DD).
+    Returns (papers, display names of sources that failed)."""
+    papers, failed = [], []
+    for display, scraper in SOURCES.values():
+        print(f"Scraping {display}...", flush=True)
         try:
-            papers = scraper_fn(cp, **kwargs)
-            print(f"  Found {len(papers)} new papers.")
-            all_papers.extend([asdict(p) for p in papers])
-            scrape_status[source_key] = "ok"
+            found = scraper(since)
+            print(f"  {len(found)} papers")
+            papers += found
         except Exception as e:
-            logger.warning(f"Error scraping {source_key}: {e}")
-            print(f"  ERROR: {e} — skipping {name}.")
-            scrape_status[source_key] = f"error: {e}"
-
-    with open("papers_raw.json", "w", encoding="utf-8") as f:
-        json.dump(all_papers, f, indent=2, ensure_ascii=False)
-
-    with open("scrape_summary.json", "w", encoding="utf-8") as f:
-        json.dump(scrape_status, f, indent=2)
-
-    print(f"\nTotal new papers found: {len(all_papers)}")
-    print("Saved to papers_raw.json")
-
-
-if __name__ == "__main__":
-    main()
+            logger.warning(f"Error scraping {display}: {e}")
+            print(f"  ERROR: {e} - check {display} manually")
+            failed.append(display)
+    return papers, failed

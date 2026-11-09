@@ -3,9 +3,7 @@ papers_raw.json
 papers_relevant.json
 nber_email_papers.json
 teams_post.md
-last_seen.md
-checked_until_update.txt
-scrape_summary.json
+last_run.json
 scrape_errors.log
 
 # User-specific state (copy state.example.json to get started)
