@@ -176,7 +176,7 @@ This approach keeps the core keyword logic deterministic and transparent while a
     },
     "ifs": {
       "name": "IFS Working Papers",
-      "checked_until_url": "https://econpapers.repec.org/paper/ifsifsewp/cwp28_2f24.htm",
+      "checked_until_url": "https://econpapers.repec.org/paper/ifsifsewp/26_2f19.htm",
       "checked_until_date": "2026-03-25"
     },
     "crr": {

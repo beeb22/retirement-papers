@@ -20,3 +20,4 @@ feedback/overrides.json
 # Python
 __pycache__/
 *.pyc
+papers_relevant_full.json

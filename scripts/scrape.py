@@ -14,6 +14,7 @@ import sys
 import time
 import logging
 from dataclasses import dataclass, asdict
+from datetime import date
 from typing import Optional
 import requests
 from bs4 import BeautifulSoup
@@ -113,6 +114,20 @@ def _extract_id(dt_text: str, id_pattern: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def _parse_ifs_id(paper_id: str) -> Optional[tuple[int, int]]:
+    """Parse an IFS-style ID like 'W25/30' (or URL-derived '25/30') into a
+    (year, seq) tuple for comparison. Returns None for IDs outside the main
+    W-series (e.g. cemmap 'WCWP28/24') or with an impossible year (EconPapers
+    has mis-numbered entries like 'W46/46'), since these can't be ordered."""
+    m = re.fullmatch(r'W?(\d{2})/(\d+)', paper_id)
+    if not m:
+        return None
+    year = int(m.group(1))
+    if year > date.today().year % 100:
+        return None
+    return (year, int(m.group(2)))
+
+
 def _id_is_past_checkpoint(paper_id: str, checkpoint_id: str, id_type: str) -> bool:
     """Return True if paper_id is AT or BEFORE the checkpoint (i.e. already seen)."""
     if not checkpoint_id:
@@ -122,7 +137,12 @@ def _id_is_past_checkpoint(paper_id: str, checkpoint_id: str, id_type: str) -> b
             return int(paper_id) <= int(checkpoint_id)
         except ValueError:
             return False
-    # String comparison for non-numeric IDs
+    # String IDs (IFS): parse year/seq for numeric comparison
+    paper_parts = _parse_ifs_id(paper_id)
+    checkpoint_parts = _parse_ifs_id(checkpoint_id)
+    if paper_parts and checkpoint_parts:
+        return paper_parts <= checkpoint_parts
+    # Fallback: exact match
     return paper_id == checkpoint_id
 
 
@@ -142,6 +162,12 @@ def _extract_checkpoint_id(checkpoint_url: str, source_key: str) -> str:
         m = re.search(r"/dp/(\d+)", checkpoint_url)
         if m:
             return m.group(1)
+    elif cfg["id_type"] == "str":
+        # IFS-style: URL slug like "W25_2f30.htm" → paper ID "W25/30"
+        # Extract the slug from the URL, decode _2f → /, strip .htm
+        m = re.search(r'/([^/]+?)\.htm$', checkpoint_url)
+        if m:
+            return m.group(1).replace("_2f", "/")
     return ""
 
 
@@ -188,9 +214,20 @@ def scrape_econpapers(source_key: str, checkpoint_url: str = "",
             if not paper_id:
                 continue
 
+            # String IDs (IFS) aren't reliably ordered on the listing: stray
+            # out-of-sequence IDs sit at the top. Skip those, and skip (rather
+            # than stop at) already-seen papers so the rest of the page is
+            # still checked.
+            if id_type == "str" and checkpoint_id and _parse_ifs_id(paper_id) is None:
+                logger.warning(f"{source_key}: skipped out-of-sequence ID "
+                               f"{paper_id} ({dt_text[:80]}) - check manually")
+                continue
+
             # Check if we've reached the checkpoint
             if _id_is_past_checkpoint(paper_id, checkpoint_id, id_type):
                 found_checkpoint = True
+                if id_type == "str":
+                    continue
                 break
 
             # Extract title and link

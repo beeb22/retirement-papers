@@ -26,6 +26,7 @@ STRONG_KEYWORDS = [
     r"\bretirement\b", r"\bretire(?:e?s?|d)\b", r"\bpension\b", r"\bannuit[yi]",
     r"\bsocial security\b", r"\bstate pension\b", r"\bold.age\b",
     r"\bolder work", r"\bolder adult", r"\baging work", r"\bageing work",
+    r"\bsenior work",
     r"\bearly exit\b", r"\bearly retirement\b",
     r"\bdefined contribution\b", r"\bdefined benefit\b", r"\b401.?k\b",
     r"\bdc plan\b", r"\bdb plan\b",
@@ -44,7 +45,8 @@ STRONG_KEYWORDS = [
 WEAK_KEYWORDS = [
     r"\bolder people\b", r"\bolder person\b", r"\bolderly\b",
     r"\bage 5[0-9]\b", r"\bover 50\b", r"\bover 60\b", r"\bover 65\b",
-    r"\blife expectancy\b", r"\bmortality\b",
+    r"\blife expectancy\b", r"\bmortality\b", r"\blongevity\b", r"\belderly\b",
+    r"\bfinancial literacy\b",
     r"\bwealth accumulation\b", r"\bwealth in retirement\b",
     r"\bhousehold saving\b", r"\bprecautionary saving\b",
     r"\bbequest\b", r"\binheritance\b",
