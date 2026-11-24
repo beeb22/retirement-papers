@@ -1,0 +1,202 @@
+[
+  {
+    "date": "2026-03-25",
+    "action": "exclude",
+    "title": "Can a Deductible Kill? The Effect of Patient Cost-Sharing on Health",
+    "reason": "Health paper doesn't explicitly focus on older people — health papers need an older-adult angle to be relevant",
+    "keywords_present": [
+      "health insurance",
+      "healthcare spending",
+      "mortality"
+    ]
+  },
+  {
+    "date": "2026-03-25",
+    "action": "exclude",
+    "title": "Trading Goods for Lives: NAFTA's Mortality Impacts and Implications",
+    "reason": "General mortality/trade paper, not about older workers or retirees specifically",
+    "keywords_present": [
+      "mortality",
+      "labor market"
+    ]
+  },
+  {
+    "date": "2026-03-25",
+    "action": "exclude",
+    "title": "The Silk Road of Ashes: Exposure to NAFTA and Adult Mortality",
+    "reason": "Working-age mortality (25-55), not about older adults or retirement",
+    "keywords_present": [
+      "mortality",
+      "disability",
+      "health insurance"
+    ]
+  },
+  {
+    "date": "2026-06-24",
+    "action": "include",
+    "title": "Measuring Financial Literacy with the Big Three: Why It Works",
+    "reason": "User included — financial literacy is core to retirement saving/planning (Lusardi & Mitchell). Filter saw title only (no abstract at filter time); title has no existing keyword. Promoted to a permanent WEAK keyword in filter.py on 2026-06-25.",
+    "promoted_keyword": "financial literacy",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-06-24",
+    "action": "include",
+    "title": "Elderly Health and Longevity in the US: Evidence and Implications",
+    "reason": "User included — abstract is about Social Security & Medicare finances and elderly longevity, but filter saw title only. Title needs an 'elderly'/'longevity' signal. Promoted to permanent WEAK keywords ('longevity','elderly') in filter.py on 2026-06-25.",
+    "promoted_keyword": "longevity",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-06-24",
+    "action": "include",
+    "title": "Are Senior Workers Overpriced? Evidence from an Age-Differentiated Payroll Tax in Norway",
+    "reason": "User included — older-worker employment and an age-targeted payroll tax. Filter has 'older work' but not 'senior work'. Promoted to a permanent STRONG keyword ('senior work') in filter.py on 2026-06-25.",
+    "promoted_keyword": "senior worker",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-06-24",
+    "action": "include",
+    "title": "Where to Build Affordable Housing? Evaluating the Tradeoffs of Location",
+    "reason": "User judgement-call include for the demographic work — no retirement signal in the title. Deliberately NO suggested_keyword: 'housing' is too broad and would flood results. Keep as a manual add.",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-06-24",
+    "action": "include",
+    "title": "Tax-Induced Emigration: Who Flees High Taxes? Evidence from the Netherlands",
+    "reason": "User included under the wealth/taxation theme — scope-adjacent to retirement, no retirement signal in the title. Deliberately NO suggested_keyword: bare 'tax'/'wealth' would flood. Manual add; revisit if a wealth/taxation lane is added permanently.",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-11-09",
+    "action": "exclude",
+    "title": "The Value of (Sub) Specialization: Evidence from Oncology",
+    "reason": "General health-care paper; mortality outcome is not about older people",
+    "keywords_present": [
+      "mortality"
+    ]
+  },
+  {
+    "date": "2026-11-09",
+    "action": "exclude",
+    "title": "Representation, Innovation, and Product Adoption",
+    "reason": "Clinical-trial design paper; elderly participants are incidental, not an ageing/retirement focus",
+    "keywords_present": [
+      "elderly"
+    ]
+  },
+  {
+    "date": "2026-11-09",
+    "action": "exclude",
+    "title": "Life-Cycle Effects of Public Childcare: Evidence on Children and Their Parents",
+    "reason": "Childcare paper; retirement only mentioned in passing in the abstract",
+    "keywords_present": [
+      "retirement"
+    ]
+  },
+  {
+    "date": "2026-11-09",
+    "action": "exclude",
+    "title": "Hospital Bed Reductions, Congestion and Mortality",
+    "reason": "Hospital capacity paper; general-population mortality, no older-adult angle",
+    "keywords_present": [
+      "mortality"
+    ]
+  },
+  {
+    "date": "2026-11-09",
+    "action": "exclude",
+    "title": "5 US health papers (naloxone laws, oncology, 340B pilot, AI in radiology, clinical-trial representation)",
+    "reason": "Matched only because the abstract mentions Medicare data. Medicare moved to TITLE_ONLY_STRONG_KEYWORDS in filter.py on 2026-11-09.",
+    "keywords_present": [
+      "medicare"
+    ]
+  },
+  {
+    "date": "2026-11-09",
+    "action": "include",
+    "title": "Who Cares at the End of Life? Unmet Care Needs across 32 Countries",
+    "reason": "User included: end-of-life care and population ageing. Promoted to permanent keywords in filter.py on 2026-11-09: end-of-life (STRONG, since the abstract also mentions children, a negative keyword), population ageing/aging (WEAK).",
+    "promoted_keyword": "end-of-life",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-11-09",
+    "action": "include",
+    "title": "Do Transfer Tax Cuts Create Homeowners?",
+    "reason": "User judgement-call include (housing/homeownership, wealth & taxation theme). Deliberately NO suggested_keyword: housing/tax too broad. Manual add, as with earlier housing and taxation papers. Third such manual include (see 2026-06-24 entries); worth revisiting a housing/wealth lane if this continues.",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-11-23",
+    "action": "exclude",
+    "title": "Gains from Trade in Gun Policy: A Compensation-Based Benchmark",
+    "reason": "Gun policy; homicide mortality, no older-adult angle",
+    "keywords_present": [
+      "mortality"
+    ]
+  },
+  {
+    "date": "2026-11-23",
+    "action": "exclude",
+    "title": "Stressful Exposure from the 2004 Indian Ocean Tsunami Drives Long-term Changes in Thyroid Hormone Physiology",
+    "reason": "Disaster stress and thyroid health; mortality only used as exposure measure",
+    "keywords_present": [
+      "mortality"
+    ]
+  },
+  {
+    "date": "2026-11-23",
+    "action": "exclude",
+    "title": "Crowding Out Temptation: Experimental Evidence on Savings and Health Behaviors in Kenya",
+    "reason": "Development savings/health-behaviour RCT; not retirement saving or older people",
+    "keywords_present": [
+      "financial security"
+    ]
+  },
+  {
+    "date": "2026-11-23",
+    "action": "exclude",
+    "title": "The Effects of Long-Term Exposure to Pollution on Health",
+    "reason": "Pollution and chronic disease in young US soldiers; no older-adult angle",
+    "keywords_present": [
+      "mortality"
+    ]
+  },
+  {
+    "date": "2026-11-23",
+    "action": "include",
+    "title": "Labor Supply and Wages over the Life Cycle: Human Capital and Disability Benefits",
+    "reason": "Life-cycle labour supply and disability benefits (retirement/labour supply tag). Missed because the abstract mentions education, a negative keyword. Deliberately no suggested_keyword: life-cycle is broad.",
+    "keywords_present": [
+      "disability"
+    ]
+  },
+  {
+    "date": "2026-11-23",
+    "action": "include",
+    "title": "Avoiding Regulation: Evidence from Nursing Homes",
+    "reason": "Nursing homes are long-term care for older people (health tag); no keyword matched.",
+    "suggested_keyword": "nursing home",
+    "keywords_present": []
+  },
+  {
+    "date": "2026-11-23",
+    "action": "exclude",
+    "title": "7 general health papers matched only on mortality (deductible, 2x NAFTA, oncology, hospital beds, gun policy, tsunami, pollution) plus Zambia aid freeze and buprenorphine (16-23 Nov run)",
+    "reason": "mortality on its own let in general health papers. With the user agreement, mortality now only counts within 80 characters of an older-age word (older, elderly, old age, later life, retire*, pension*, aged 55+, ageing) in filter.py on 2026-11-23.",
+    "keywords_present": [
+      "mortality"
+    ]
+  },
+  {
+    "date": "2026-11-23",
+    "action": "include",
+    "title": "Paying for Care: Household Budgets and Domestic Care in Italy",
+    "reason": "Households with a member aged 65+, spending on paid domestic care, ageing-at-home policy (consumption/living standards and health tags). Missed because the abstract says aged 65 or over and only over 65 was a keyword. With user agreement, added WEAK keyword aged 60+ (regex aged 6x-9x) to filter.py on 2026-11-23.",
+    "promoted_keyword": "aged 65",
+    "keywords_present": []
+  }
+]

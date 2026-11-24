@@ -46,20 +46,34 @@ class Paper:
     url: str
     authors: str
     abstract: str
+    date: str = ""  # YYYY-MM-DD the source's date filter used; "" if unknown
+
+
+def http_get(url: str, **kwargs) -> requests.Response:
+    """GET with one retry, so a single network blip doesn't lose data.
+    Raises requests.RequestException if both attempts fail."""
+    for attempt in (1, 2):
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=TIMEOUT, **kwargs)
+            r.raise_for_status()
+            return r
+        except requests.RequestException as e:
+            logger.warning(f"Failed to fetch {url} (attempt {attempt}): {e}")
+            if attempt == 2:
+                raise
+            time.sleep(5)
+        finally:
+            time.sleep(DELAY)
 
 
 def get_soup(url: str) -> Optional[BeautifulSoup]:
+    """Fetch and parse a page; None if it can't be fetched."""
     try:
-        r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-        r.raise_for_status()
         # Pass raw bytes so BeautifulSoup reads the page's own charset declaration
         # (requests guesses ISO-8859-1 for EconPapers, which garbles accented names)
-        return BeautifulSoup(r.content, "html.parser")
-    except Exception as e:
-        logger.warning(f"Failed to fetch {url}: {e}")
+        return BeautifulSoup(http_get(url).content, "html.parser")
+    except requests.RequestException:
         return None
-    finally:
-        time.sleep(DELAY)
 
 
 def fix_mojibake(text: str) -> str:
@@ -83,7 +97,8 @@ def fix_mojibake(text: str) -> str:
 # EconPapers (IZA, CESifo, IFS)
 # ---------------------------------------------------------------------------
 
-# The listing page is newest-first, 100 papers per page, as <dl>/<dt>/<dd>:
+# The listing is newest-first, 100 papers per page (index.htm, default1.htm,
+# default2.htm, ...), as <dl>/<dt>/<dd>:
 #   <dt>NUMBER: <a href="SLUG.htm">TITLE</a></dt>
 #   <dd><i>Author1</i>, <i>Author2</i></dd>
 # "url" is the link shown in the post; it can use {number} or {slug}.
@@ -106,14 +121,15 @@ ECONPAPERS_SOURCES = {
 }
 
 
-def fetch_econpapers_detail(detail_url: str) -> tuple[str, Optional[str]]:
-    """Fetch an EconPapers paper page and return (abstract, epdate)."""
+def fetch_econpapers_detail(detail_url: str) -> tuple[str, str]:
+    """Fetch an EconPapers paper page and return (abstract, epdate).
+    Raises if the date can't be read: skipping the paper would silently drop it,
+    so the whole source is reported as failed instead."""
     soup = get_soup(detail_url)
-    if not soup:
-        return "", None
-
-    meta = soup.find("meta", attrs={"name": "EPDATE"})
-    epdate = meta.get("content") if meta else None
+    meta = soup.find("meta", attrs={"name": "EPDATE"}) if soup else None
+    if not meta:
+        raise RuntimeError(f"no EPDATE on {detail_url} (fetch failed or page format changed)")
+    epdate = meta["content"]
 
     abstract = ""
     # Abstract follows a <b>Abstract:</b> tag in the bodytext div
@@ -138,7 +154,7 @@ def scrape_econpapers(source_key: str, since: str) -> list[Paper]:
     consecutive_old = 0
 
     for page in range(20):
-        url = cfg["base_url"] if page == 0 else f"{cfg['base_url']}default{page * 100}.htm"
+        url = cfg["base_url"] if page == 0 else f"{cfg['base_url']}default{page}.htm"
         soup = get_soup(url)
         dl = soup.find("dl") if soup else None
         if not dl:
@@ -154,7 +170,7 @@ def scrape_econpapers(source_key: str, since: str) -> list[Paper]:
             slug = link.get("href", "").removesuffix(".htm")
 
             abstract, epdate = fetch_econpapers_detail(cfg["base_url"] + link.get("href", ""))
-            if not epdate or epdate < since:
+            if epdate < since:
                 consecutive_old += 1
                 if consecutive_old >= STOP_AFTER_OLD:
                     return papers
@@ -164,7 +180,7 @@ def scrape_econpapers(source_key: str, since: str) -> list[Paper]:
             authors = ", ".join(i.get_text(strip=True) for i in dd.find_all("i"))
             papers.append(Paper(cfg["display"], fix_mojibake(link.get_text(strip=True)),
                                 cfg["url"].format(number=number, slug=slug),
-                                fix_mojibake(authors), abstract))
+                                fix_mojibake(authors), abstract, epdate))
     return papers
 
 
@@ -196,10 +212,7 @@ def scrape_nber(since: str) -> list[Paper]:
     papers = []
     consecutive_old = 0
     for page in range(1, 11):
-        r = requests.get(NBER_API, params={"page": page, "perPage": 100},
-                         headers=HEADERS, timeout=TIMEOUT)
-        r.raise_for_status()
-        rows = r.json().get("results", [])
+        rows = http_get(NBER_API, params={"page": page, "perPage": 100}).json().get("results", [])
         if not rows:
             break
 
@@ -217,7 +230,7 @@ def scrape_nber(since: str) -> list[Paper]:
 
             papers.append(Paper("NBER", _html_to_text(row.get("title")), url,
                                 ", ".join(_html_to_text(a) for a in row.get("authors") or []),
-                                abstract or _html_to_text(row.get("abstract"))))
+                                abstract or _html_to_text(row.get("abstract")), released))
     return papers
 
 
@@ -304,6 +317,7 @@ def scrape_crr(since: str) -> list[Paper]:
                 url,
                 ", ".join(dict.fromkeys(a.get_text(strip=True) for a in authors)),
                 _fetch_abstract_crr(url),
+                pub_date or "",
             ))
     return papers
 

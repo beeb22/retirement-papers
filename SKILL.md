@@ -16,48 +16,44 @@ description: >
 
 Automates the RSA biweekly working paper review across 5 economics sources (NBER, IZA, CESifo, IFS, CRR), producing a summary post for a shared Teams channel.
 
-Everything is date-based: a run finds papers published on or after a start date, and `state.json` just remembers the date of the last confirmed run.
+Several people take turns running the review, so there is no saved checkpoint: every run starts from a date the user gives (usually the date of the last Teams post), and the post is returned in the chat.
 
 ## Workflow
 
-### 1. Setup
+### 1. Get the start date
+
+If the user hasn't given one, ask: *"From what date should I check papers? (usually the date of the last post)"*. Don't guess or default to one. Convert it to `YYYY-MM-DD` (e.g. "since 26/10" → `2026-10-26`, "since the start of last week" → that Monday) and say which date you're using. Never convert dates to paper numbers.
+
+### 2. Setup
 
 **Skill directory and Python**: use the paths stored in memory. If either is missing, ask the user (*"Where is this skill installed?"*, *"Where is your Python executable?"*) and save the answer to memory. Never search for Python — always use the stored path.
+
+If the skill directory is a git clone, run `git pull` in it first so you have the team's latest keywords and feedback. If the pull fails (e.g. local changes), tell the user and carry on.
 
 ```bash
 "<python-path>" -m pip install -q -r <skill-directory>/requirements.txt
 ```
 
-### 2. Run
+### 3. Run
 
 ```bash
-"<python-path>" <skill-directory>/scripts/run.py --since 2026-10-26   # user gave a date
-"<python-path>" <skill-directory>/scripts/run.py                      # since the last confirmed run
+"<python-path>" <skill-directory>/scripts/run.py --since 2026-10-26
+"<python-path>" <skill-directory>/scripts/run.py --since 2026-10-03 --until 2026-10-16   # only if the user gives an end date
 ```
 
-If the user gives a date (e.g. "since 26/10"), pass it with `--since` — never convert dates to paper numbers. With no `--since`, the run starts from `last_checked` in `state.json`; if there's no `state.json` yet, ask the user for a start date.
+Older periods take longer: the run still opens every paper from the start date to today, then drops those after `--until`.
 
-A run takes a couple of minutes. It scrapes all sources, filters, and writes to the skill directory:
-- `teams_post.md` — the post, ready to paste into Teams
-- `papers_relevant.json` / `papers_raw.json` — the relevant / all scraped papers
-- `last_run.json` — this run's dates, used by `--confirm`
+A run takes about 4 minutes (it opens every new paper's page for its date and abstract), so run it in the background. It scrapes all sources, filters, and prints the post after a `===== TEAMS POST =====` line. It also writes working files to the skill directory (not committed):
+- `papers_relevant.json` / `papers_raw.json` — the kept / all scraped papers
 - `scrape_errors.log` — warnings, if anything failed
 
 If a source fails, the run carries on and the post lists it under "check manually".
 
-### 3. Review with the user
+### 4. Review with the user
 
-Show the post (the run prints it) and ask: *"Does this look right? Any papers to add or remove?"*
+Show the user the post in the chat. Before asking, check `papers_raw.json` for papers that were left out but look relevant under `references/relevance_guide.md`, and point out kept papers that look like false positives (compare with past exclusions in `feedback/overrides.json`). Then ask: *"Does this look right? Any papers to add or remove?"*
 
-If the user flags changes, edit `teams_post.md` and **log the feedback** (see "Learning from feedback").
-
-### 4. Confirm
-
-Once the user is happy:
-```bash
-"<python-path>" <skill-directory>/scripts/run.py --confirm
-```
-This sets `last_checked` in `state.json` to the run's date, so the next run starts where this one ended.
+When the user adds or removes papers, show the updated post in the chat and **log the feedback** (see "Learning from feedback"). The final post in the chat is the deliverable: there is no file to update and nothing to confirm afterwards.
 
 ---
 
@@ -83,7 +79,7 @@ To add an EconPapers source, add an entry to `ECONPAPERS_SOURCES` and `SOURCES` 
 
 ## Learning from feedback
 
-The keyword filter improves over time by learning from user corrections. Each time the user adds or removes a paper during review, log the decision to `feedback/overrides.json`:
+The keyword filter improves over time by learning from user corrections. Each time the user adds or removes a paper during review, log the decision to `feedback/overrides.json`. This file is shared through git so everyone on the rota learns from each other's corrections: after logging, offer to commit and push it (only push on the user's yes).
 
 ```json
 [

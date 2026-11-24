@@ -1,16 +1,14 @@
-# Run outputs (regenerated each run)
+# Working files written by each run
 papers_raw.json
 papers_relevant.json
-nber_email_papers.json
-teams_post.md
-last_run.json
 scrape_errors.log
 
-# User-specific state (copy state.example.json to get started)
+# Left over from the old checkpoint workflow (no longer used)
 state.json
-
-# User-specific feedback (accumulated over time)
-feedback/overrides.json
+last_run.json
+teams_post.md
+nber_email_papers.json
+papers_relevant_full.json
 
 # User-specific Claude settings
 .claude/settings.local.json
@@ -18,4 +16,3 @@ feedback/overrides.json
 # Python
 __pycache__/
 *.pyc
-papers_relevant_full.json

@@ -34,18 +34,26 @@ TITLE_ONLY_STRONG_KEYWORDS = [
     r"\bmedicare\b",
 ]
 
+# Words that mark a paper as being about older people, for keywords that only
+# count in that context
+_OLDER_CONTEXT = (r"\b(older|elderly|old.age|later.life|late.life|retire\w*|pension\w*"
+                  r"|aged? (?:5[5-9]|[6-9]\d)|over (?:5[5-9]|[6-9]\d)|ageing|aging)\b")
+
 # Weak positive signals — possibly relevant, included as borderline
 WEAK_KEYWORDS = [
     r"\bolder people\b", r"\bolder person\b", r"\bolderly\b",
     r"\bage 5[0-9]\b", r"\bover 50\b", r"\bover 60\b", r"\bover 65\b",
-    r"\blife expectancy\b", r"\bmortality\b", r"\blongevity\b", r"\belderly\b",
+    r"\baged (?:6\d|[7-9]\d)\b",  # "aged 65 or over" (added 2026-11-23)
+    r"\blife expectancy\b", r"\blongevity\b", r"\belderly\b",
+    # Mortality only counts near an older-age word: on its own it let in many
+    # general health papers (see feedback/overrides.json, Mar-Nov 2026)
+    r"\bmortality\b.{0,80}" + _OLDER_CONTEXT + "|" + _OLDER_CONTEXT + r".{0,80}\bmortality\b",
     r"\bpopulation ag(?:e)?ing\b",
     r"\bfinancial literacy\b",
     r"\bwealth accumulation\b", r"\bwealth in retirement\b",
     r"\bhousehold saving\b", r"\bprecautionary saving\b",
     r"\bbequest\b", r"\binheritance\b",
     r"\bintergenerational transfer", r"\bintergenerational wealth",
-    r"\bfertility\b",  # newer addition per team
     r"\bdisability\b",
     # Labour force participation only counts when paired with older-worker context
     r"\blabou?r force participation\b.{0,80}\b(older|retirement|pension|age[d ])\b|\b(older|retirement|pension|age[d ])\b.{0,80}\blabou?r force participation\b",

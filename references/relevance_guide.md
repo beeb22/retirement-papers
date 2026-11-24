@@ -13,7 +13,6 @@ This document helps calibrate the paper relevance filter. It's based on the team
 | retirement/labour supply | Retirement decisions, retirement age, early retirement, labour force participation of older workers, job guarantee programmes for older unemployed |
 | savings and wealth | Wealth accumulation and decumulation, retirement savings, 401k/ISA/pension pot behaviour, housing wealth, bequest motives |
 | transfers | Intergenerational transfers — bequests, inheritances, inter vivos gifts, dynastic wealth transmission |
-| fertility | Fertility rates and trends — the team has recently started including these papers |
 
 ## Examples of RELEVANT papers (from Zotero library)
 
@@ -46,7 +45,6 @@ These are the tricky ones that need Claude's judgment:
 - Papers about **housing wealth** — relevant if it connects to retirement or bequest motives; NOT relevant if purely about mortgage markets for young buyers
 - Papers about **intergenerational transfers** — relevant if it's about bequests/inheritances and wealth distribution; borderline if it's purely about child outcomes
 - Papers about **labour supply** — relevant ONLY if focused on older workers (50+); NOT relevant if about prime-age or young workers
-- Papers about **fertility** — currently being included, so include any fertility paper
 
 ## What definitely NOT to include
 
@@ -56,3 +54,4 @@ These are the tricky ones that need Claude's judgment:
 - Technology/innovation papers
 - General macroeconomics without an aging angle
 - Young worker labour supply, youth unemployment
+- Fertility rates and trends (the team stopped including these in November 2026). Exception: papers where pensions are a main focus, e.g. pension coverage as a driver of fertility, count as pensions papers
